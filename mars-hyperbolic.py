@@ -9,7 +9,7 @@ r_mars = 2.279e8           # km, average distance from Sun
 v_earth = np.sqrt(mu_sun / r_earth)
 v_mars = np.sqrt(mu_sun / r_mars)
 max_periapsis_speed_mars = 7.5  # km/s
-total_delta_v = 15  # km/s
+total_delta_v = 7  # km/s
 
 def mars_arrival_velocity(delta_v_outbound):
     """
@@ -55,11 +55,13 @@ def mars_periapsis_speed(delta_v_outbound):
 
 # Objective: minimize periapsis speed constraint violation
 def objective(delta_v_outbound):
-    v_entry, _, _ = mars_periapsis_speed(delta_v_outbound)
-    penalty = 0.0
-    if v_entry > max_periapsis_speed_mars:
-        penalty = (v_entry - max_periapsis_speed_mars) ** 2 * 1  # heavy penalty
-    return  penalty 
+    v_entry, delta_v_braking, v_rel_to_mars = mars_periapsis_speed(delta_v_outbound)
+    print(f"delta_v_outbound: {delta_v_outbound:.2f}, v_entry: {v_entry:.2f}, delta_v_braking: {delta_v_braking:.2f}, v_rel_to_mars: {v_rel_to_mars:.2f}")
+    if v_entry < 0:
+        penalty = 1e6  # Large penalty for negative speeds
+    else:
+        penalty = (v_entry - max_periapsis_speed_mars) ** 2
+    return penalty
 
 # Perform optimization to find the optimal outbound delta-v
 result = minimize_scalar(objective, bounds=(3, total_delta_v), method='bounded')
