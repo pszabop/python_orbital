@@ -1,0 +1,11 @@
+services:
+  python:
+    build: .
+    volumes:
+      - .:/app
+    working_dir: /app
+    container_name: mars_delta_v_interactive
+    stdin_open: true    # Keep STDIN open (for interactive)
+    tty: true           # Allocate a pseudo-TTY
+    command: /bin/bash  # Start with a shell so you can run python or other commands
+
