@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize_scalar
 from radial_coordinates import VelocityVector
 from radial_coordinates import radial_vector_delta_two_orbits
+from radial_coordinates import time_to_traverse_orbits
 
 
 # Constants
@@ -132,6 +133,37 @@ try:
     print(f"Optimal braking ratio: {optimal_braking_ratio:.3f}")
     final_periapses_velocity = compute_mars_final_periapses_velocity(TOTAL_DELTA_V, optimal_braking_ratio)
     print(f"Final Mars periapsis velocity with optimal braking ratio: {final_periapses_velocity:.2f} km/s")
+
+    # conic Earth system to SOI
+    braking_delta_v = TOTAL_DELTA_V * optimal_braking_ratio
+    delta_v = TOTAL_DELTA_V  - braking_delta_v
+    v_initial = VelocityVector(np.sqrt(MU_EARTH / R_EARTH_SURFACE) + delta_v, 0.0)  # Earth's orbital velocity + min delta-v all tangential
+    print(f"Initial velocity at Earth: {v_initial:.2f} km/s")
+    v_earth_soi = radial_vector_delta_two_orbits(MU_EARTH, R_EARTH_SURFACE, R_EARTH_SOI, v_initial)
+    print(f"Earth SOI velocity: {v_earth_soi:.2f} km/s")
+
+    # conic Heliocentric system to Mars SOI
+    heliocentric_v_initial = EARTH_VELOCITY + VelocityVector(v_earth_soi.magnitude() * np.cos(EARTH_SOI_DEPARTURE_ANGLE), v_earth_soi.magnitude() * np.sin(EARTH_SOI_DEPARTURE_ANGLE))
+    print(f"Heliocentric velocity at earth SOI: {heliocentric_v_initial:.2f} km/s")
+    v_mars_soi = radial_vector_delta_two_orbits(MU_SUN, R_EARTH, R_MARS, heliocentric_v_initial)
+    print(f"Mars SOI velocity: {v_mars_soi:.2f} km/s")
+    relative_mars_velocity_heliocentric = v_mars_soi - MARS_VELOCITY
+    print(f"Heliocentric Relative velocity to Mars at SOI: {relative_mars_velocity_heliocentric:.2f} km/s")
+
+    # conic Mars SOI to periapsis
+    # naive approach just take the magnitude of the heliocentric relative velocity at Mars as radial in the negative direction
+    mars_soi_relative_velocity = VelocityVector(0, - 1 * relative_mars_velocity_heliocentric.magnitude())
+    print(f"Relative velocity at Mars SOI: {mars_soi_relative_velocity:.2f} km/s")
+    mars_periapses_velocity = radial_vector_delta_two_orbits(MU_MARS, R_MARS_SOI, R_MARS_SURFACE, mars_soi_relative_velocity)
+    print(f"Mars periapsis velocity prior to braking: {mars_periapses_velocity:.2f} km/s")
+    mars_final_periapses_velocity = mars_periapses_velocity + VelocityVector(0, -braking_delta_v)  # braking at periapsis
+    print(f"Mars periapsis velocity after braking: {mars_final_periapses_velocity:.2f} km/s")
+
+    # time to mars
+    time_to_mars = time_to_traverse_orbits(MU_SUN, R_EARTH, R_MARS, heliocentric_v_initial)
+    print(f"Time to Mars: {time_to_mars/86400:.2f} days")
+
+
 except ValueError as e:
     print(str(e))
 

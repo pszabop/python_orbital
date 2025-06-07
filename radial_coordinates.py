@@ -84,6 +84,54 @@ def radial_vector_delta_two_orbits(mu, r_initial, r_final, v_initial):
 
     return VelocityVector(v_tangential_final, v_radial_final)
 
+
+def time_to_traverse_orbits(mu, r_initial, r_final, v_initial, tolerance=3600):
+    """
+    Calculates the time needed to traverse between two orbits by breaking the radii into smaller increments
+    and summing the time for each segment until the error converges within the specified tolerance.
+    
+    :param mu: Gravitational parameter of the central body (km^3/s^2)
+    :param r_initial: Initial orbital radius (km)
+    :param r_final: Final orbital radius (km)
+    :param v_initial: Initial velocity vector (VelocityVector)
+    :param tolerance: Tolerance for the time error in seconds (default: 3600 seconds)
+    :return: Total time to traverse the orbits (seconds)
+    """
+    def segment_time(mu, r1, r2, v1):
+        """
+        Calculates the time for a single segment between two radii.
+        :param mu: Gravitational parameter of the central body (km^3/s^2)
+        :param r1: Starting radius of the segment (km)
+        :param r2: Ending radius of the segment (km)
+        :param v1: Velocity vector at the starting radius (VelocityVector)
+        :return: Time for the segment (seconds)
+        """
+        v2 = radial_vector_delta_two_orbits(mu, r1, r2, v1)  # Compute velocity at the end of the segment
+        avg_radial_velocity = (v1.radial + v2.radial) / 2  # Average radial velocity for the segment
+        distance = abs(r2 - r1)  # Distance between the radii
+        return distance / avg_radial_velocity  # Time = Distance / Average Radial Velocity
+
+    # Initialize variables
+    total_time = 0
+    current_radius = r_initial
+    current_velocity = v_initial
+    step_size = abs(r_final - r_initial) / 10  # Start with 10 segments
+
+    while step_size > tolerance:
+        next_radius = current_radius + step_size if r_final > r_initial else current_radius - step_size
+        segment_time_value = segment_time(mu, current_radius, next_radius, current_velocity)
+        total_time += segment_time_value
+
+        # Update for the next iteration
+        current_radius = next_radius
+        current_velocity = radial_vector_delta_two_orbits(mu, current_radius, next_radius, current_velocity)
+
+        # Reduce step size for finer increments
+        step_size /= 2
+
+    return total_time
+
+
 def find_min_departure_velocity(mu, r_initial, r_final, tolerance=1e-6):
     """
     Finds the minimum departure tangential velocity that results in a final radial velocity
@@ -195,6 +243,23 @@ class TestApproachVelocity(unittest.TestCase):
         angle = np.arctan2(-2.59, 0.037)
         #print(f"Angle: {np.degrees(angle)} degrees")
         self.assertAlmostEqual(v_relative.angle(), angle, places=2)
+
+
+class TestTimeToTraverseOrbits(unittest.TestCase):
+    def test_time_to_traverse_orbits_earth_to_moon(self):
+        mu_earth = 3.986004418e5  # Gravitational parameter of Earth (km^3/s^2)
+        r_leo = 6.7e3             # Radius of Low Earth Orbit (km)
+        r_moon = 3.844e5          # Radius of Moon's orbit around Earth (km)
+        tolerance = 0.01         # Desired final radial velocity (km/s)
+
+        v_initial_tangential = find_min_departure_velocity(mu_earth, r_leo, r_moon, tolerance) + 0.01  # Add a small delta to ensure we are above the minimum velocity
+        v_initial = VelocityVector(v_initial_tangential, 0.0)  # Initial velocity vector
+
+        # Calculate the time to traverse from LEO to Moon's orbit
+        time = time_to_traverse_orbits(mu_earth, r_leo, r_moon, v_initial, tolerance=3600)
+
+        # Assert the result (example expected value, adjust based on actual calculation)
+        self.assertAlmostEqual(time, 31986.96887181064, places=0)  # Expected time in seconds
 
 # Run the tests if the file is executed directly
 if __name__ == "__main__":
