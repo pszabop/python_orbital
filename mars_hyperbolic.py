@@ -25,8 +25,9 @@ R_EARTH_SOI = 9.2e5         # km, Earth Sphere of Influence (SOI)
 MAX_PERIAPSIS_SPEED_MARS = 7.5  # km/s
 TOTAL_DELTA_V = 7.5             # km/s, aka Starship Delta-V budget
 EARTH_SOI_DEPARTURE_ANGLE = 0.0
+MAX_PERIAPSIS_SPEED_MARS = 7.5  # km/s, maximum periapsis speed at Mars due to aerobraking limitations on G forces on the passengers of 3G
 
-
+"""
 # conic Earth system to SOI
 delta_v = TOTAL_DELTA_V / 1.72
 braking_delta_v = TOTAL_DELTA_V - delta_v  # remaining delta-v for braking at Mars
@@ -51,8 +52,88 @@ mars_periapses_velocity = radial_vector_delta_two_orbits(MU_MARS, R_MARS_SOI, R_
 print(f"Mars periapsis velocity prior to braking: {mars_periapses_velocity:.2f} km/s")
 mars_final_periapses_velocity = mars_periapses_velocity + VelocityVector(0, -braking_delta_v)  # braking at periapsis
 print(f"Mars periapsis velocity after braking: {mars_final_periapses_velocity:.2f} km/s")
+"""
 
 
+def compute_mars_final_periapses_velocity(craft_delta_v, braking_ratio):
+    """
+    Computes the final Mars periapsis velocity after braking, given an initial delta-v.
+    
+    :param craft_delta_v: delta_v capability of the craft (km/s)
+    :param braking_ratio: the ratio of the delta-v used for braking at Mars (0 < braking_ratio < 1)
+    :return: Final Mars periapsis velocity after braking (VelocityVector)
+    """
+    # Constants
+    braking_delta_v = craft_delta_v * braking_ratio
+    delta_v = craft_delta_v - braking_delta_v
+    #print(f"Delta-v for outbound trajectory: {delta_v:.2f} km/s")
+
+    # Earth's initial velocity
+    v_initial = VelocityVector(np.sqrt(MU_EARTH / R_EARTH_SURFACE) + delta_v, 0.0)
+    v_earth_soi = radial_vector_delta_two_orbits(MU_EARTH, R_EARTH_SURFACE, R_EARTH_SOI, v_initial)
+
+    # Heliocentric velocity at Earth SOI
+    heliocentric_v_initial = EARTH_VELOCITY + VelocityVector(
+        v_earth_soi.magnitude() * np.cos(EARTH_SOI_DEPARTURE_ANGLE),
+        v_earth_soi.magnitude() * np.sin(EARTH_SOI_DEPARTURE_ANGLE)
+    )
+    v_mars_soi = radial_vector_delta_two_orbits(MU_SUN, R_EARTH, R_MARS, heliocentric_v_initial)
+    relative_mars_velocity_heliocentric = v_mars_soi - MARS_VELOCITY
+
+    # Mars SOI relative velocity
+    mars_soi_relative_velocity = VelocityVector(0, -relative_mars_velocity_heliocentric.magnitude())
+    mars_periapses_velocity = radial_vector_delta_two_orbits(MU_MARS, R_MARS_SOI, R_MARS_SURFACE, mars_soi_relative_velocity)
+
+    # Final Mars periapsis velocity after braking
+    mars_final_periapses_velocity = mars_periapses_velocity + VelocityVector(0, -braking_delta_v)
+
+    return mars_final_periapses_velocity
+
+final_v = compute_mars_final_periapses_velocity(TOTAL_DELTA_V, 0.415)
+print(f"Final Mars periapsis velocity after braking: {final_v:.2f} km/s")
+
+
+from scipy.optimize import root_scalar
+def solve_braking_ratio(craft_delta_v, max_periapses_speed_mars, tolerance=1e-4):
+    """
+    Solves for the braking ratio such that the magnitude of Mars periapsis velocity
+    is close to MAX_PERIAPSIS_SPEED_MARS using a root-finding method.
+    
+    :param craft_delta_v: delta_v capability of the craft (km/s)
+    :param tolerance: Tolerance for the difference between the magnitude and MAX_PERIAPSIS_SPEED_MARS
+    :return: Optimal braking ratio
+    """
+    def objective(braking_ratio):
+        # Compute the final Mars periapsis velocity
+        mars_final_velocity = compute_mars_final_periapses_velocity(craft_delta_v, braking_ratio)
+        magnitude = mars_final_velocity.magnitude()
+
+        # Return the difference between the magnitude and the target speed
+        if np.isnan(magnitude):
+            #return float('inf')  # Penalize NaN results heavily
+            return -100.0
+        return magnitude - max_periapses_speed_mars
+
+    # Use root_scalar to find the braking ratio that minimizes the difference
+    result = root_scalar(
+        objective,
+        method='brentq',  # Brent's method (robust and efficient)
+        bracket=[0.01, 0.99],  # Braking ratio must be between 0 and 1
+        xtol=tolerance  # Tolerance for convergence
+    )
+
+    if result.converged:
+        return result.root  # Optimal braking ratio
+    else:
+        raise ValueError("Solver did not converge.")
+
+try:
+    optimal_braking_ratio = solve_braking_ratio(TOTAL_DELTA_V, MAX_PERIAPSIS_SPEED_MARS)
+    print(f"Optimal braking ratio: {optimal_braking_ratio:.3f}")
+    final_periapses_velocity = compute_mars_final_periapses_velocity(TOTAL_DELTA_V, optimal_braking_ratio)
+    print(f"Final Mars periapsis velocity with optimal braking ratio: {final_periapses_velocity:.2f} km/s")
+except ValueError as e:
+    print(str(e))
 
 """
 # Perform optimization to find the optimal outbound delta-v
